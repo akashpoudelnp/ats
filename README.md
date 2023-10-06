@@ -15,19 +15,6 @@ An artisan command runner for your laravel projects.
 wget https://raw.githubusercontent.com/akashpoudelnp/ats/master/ats && chmod +x ats && sudo mv ats /usr/local/bin
 ```
 
-$this->output->printOut('ats [command]');
-$this->output->line();
-$this->output->success('ATS Specific Commands:');
-$this->output->line();
-$this->output->printOut('  --about Show about message');
-$this->output->printOut('  --help Show this help message');
-$this->output->printOut('  --php Shows the configured php version for the project');
-$this->output->printOut('  --php-set Sets the configured php version for the project');
-$this->output->printOut('  --update Update the ats to latest version');
-$this->output->printOut('  --aliases List all aliases');
-$this->output->printOut('  --aliases-add Add new alias');
-$this->output->printOut('  --aliases-remove Remove alias');
-
 ## Usage
 
 ```bash
