@@ -256,7 +256,9 @@ class AtsNativeCommandHandler
         $this->output->printOut('Current Version: ' . ATS_VERSION);
 
         try {
-            $latestVersionFromServer = json_decode(file_get_contents(ATS_SERVER_URL . "/latest"), true);
+            $versionData = file_get_contents(ATS_SERVER_URL . '/latest');
+            $cleanVersionData      = preg_replace('/,\s*([\]}])/m', '$1', $versionData);
+            $latestVersionFromServer = json_decode($cleanVersionData, true);
         } catch (Exception $exception) {
             $this->output->alert('Failed to get latest version, please try again', 'red');
             return;
