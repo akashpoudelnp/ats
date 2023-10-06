@@ -1,7 +1,7 @@
 #! /usr/bin/env php
 <?php
 
-const ATS_VERSION    = "0.1";
+const ATS_VERSION    = "1";
 const ATS_SERVER_URL = 'https://raw.githubusercontent.com/akashpoudelnp/ats/master';
 
 $currentUser = trim(get_current_user());
