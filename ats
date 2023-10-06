@@ -2,7 +2,7 @@
 <?php
 
 const ATS_VERSION    = "0.1";
-const ATS_SERVER_URL = 'https://';
+const ATS_SERVER_URL = 'https://raw.githubusercontent.com/akashpoudelnp/ats/master';
 
 $currentUser = trim(get_current_user());
 
@@ -256,7 +256,7 @@ class AtsNativeCommandHandler
         $this->output->printOut('Current Version: ' . ATS_VERSION);
 
         try {
-            $latestVersionFromServer = json_decode(file_get_contents(ATS_SERVER_URL . "/latest.php"), true);
+            $latestVersionFromServer = json_decode(file_get_contents(ATS_SERVER_URL . "/latest"), true);
         } catch (Exception $exception) {
             $this->output->alert('Failed to get latest version, please try again', 'red');
             return;
