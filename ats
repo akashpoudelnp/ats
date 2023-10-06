@@ -1,7 +1,7 @@
 #! /usr/bin/env php
 <?php
 
-const ATS_VERSION    = "1";
+const ATS_VERSION    = "1.1";
 const ATS_SERVER_URL = 'https://raw.githubusercontent.com/akashpoudelnp/ats/master';
 
 $currentUser = trim(get_current_user());
@@ -274,7 +274,7 @@ class AtsNativeCommandHandler
             return;
         }
 
-        $this->output->alert("Updates available, ATS v{$latestVersionFromServer['version']}", 'yellow');
+        $this->output->alert("Updates are available, ATS v{$latestVersionFromServer['version']}", 'yellow');
 
         $sureToUpdate = readline("Are you sure you want to update to {$latestVersionFromServer['version']}? [y/n]");
 
@@ -332,7 +332,7 @@ class AtsNativeCommandHandler
 
     private function setPhpVersion()
     {
-        $phpVersion = readline('Enter php version: ');
+        $phpVersion = readline('Enter php version for this project: ');
 
         (new PHPVersionResolver)->setPhpVersion($phpVersion);
 
@@ -416,7 +416,7 @@ class AtsNativeCommandHandler
                 $this->help();
                 break;
             case '--php':
-                $this->output->printOut('Configured PHP Version: ' . explode('/php', (new PHPVersionResolver)->getBinaryPath())[1]);
+                $this->output->printOut('Configured PHP Version for this Project: ' . explode('/php', (new PHPVersionResolver)->getBinaryPath())[1]);
                 exit(0);
             case '--update':
                 $this->updateATS();
