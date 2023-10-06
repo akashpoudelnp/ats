@@ -1,0 +1,445 @@
+#! /usr/bin/env php
+<?php
+
+const ATS_VERSION    = "0.1";
+const ATS_SERVER_URL = 'https://';
+
+$currentUser = trim(get_current_user());
+
+define("ATS_CONFIG_PATH", "/home/$currentUser/.config/.ats.json");
+
+class Config
+{
+    private static $configs = [];
+
+    public static function get($key, $default = null)
+    {
+        $configPath = ATS_CONFIG_PATH;
+
+        if (!file_exists($configPath)) {
+            return $default;
+        }
+
+        if (!static::$configs) {
+            static::$configs = json_decode(file_get_contents($configPath), true);
+        }
+
+        if (!static::$configs) {
+            return $default;
+        }
+
+        return isset(static::$configs[$key]) ? static::$configs[$key] : $default;
+    }
+
+    public static function set($key, $value)
+    {
+        $configPath = ATS_CONFIG_PATH;
+
+        if (!file_exists($configPath)) {
+            return false;
+        }
+
+        if (!static::$configs) {
+            static::$configs = json_decode(file_get_contents($configPath), true);
+        }
+
+        if (!static::$configs) {
+            return false;
+        }
+
+        static::$configs[$key] = $value;
+
+        file_put_contents($configPath, json_encode(static::$configs, JSON_PRETTY_PRINT));
+
+        return true;
+    }
+
+    public static function createIfNotExists()
+    {
+        if (!file_exists(ATS_CONFIG_PATH)) {
+            file_put_contents(ATS_CONFIG_PATH, json_encode([
+                'aliases'              => [],
+                'project_php_versions' => [],
+            ], JSON_PRETTY_PRINT));
+        }
+    }
+}
+
+class ConsoleOutput
+{
+    private $colors = [
+        'black'        => '0;30',
+        'dark_gray'    => '1;30',
+        'blue'         => '0;34',
+        'light_blue'   => '1;34',
+        'green'        => '0;32',
+        'light_green'  => '1;32',
+        'cyan'         => '0;36',
+        'light_cyan'   => '1;36',
+        'red'          => '0;31',
+        'light_red'    => '1;31',
+        'purple'       => '0;35',
+        'light_purple' => '1;35',
+        'brown'        => '0;33',
+        'yellow'       => '1;33',
+        'light_gray'   => '0;37',
+        'white'        => '1;37',
+    ];
+
+    private $backgrounds = [
+        'black'      => '40',
+        'red'        => '41',
+        'green'      => '42',
+        'yellow'     => '43',
+        'blue'       => '44',
+        'magenta'    => '45',
+        'cyan'       => '46',
+        'light_gray' => '47',
+    ];
+
+    private function colorize($text, $color)
+    {
+        return "\033[" . $this->colors[$color] . "m$text\033[0m";
+    }
+
+    public function printOut($text, $color = 'white')
+    {
+        echo $this->colorize($text, $color) . PHP_EOL;
+    }
+
+    public function error($text)
+    {
+        echo $this->colorize($text, 'red') . PHP_EOL;
+    }
+
+    public function success($text)
+    {
+        echo $this->colorize($text, 'green') . PHP_EOL;
+    }
+
+    public function line($color = 'white')
+    {
+        $width = exec('tput cols') / 2;
+
+        echo $this->colorize(str_repeat('─', $width), $color) . PHP_EOL;
+    }
+
+    public function alert($text, $color = 'yellow')
+    {
+        echo chr(27) . '[' . $this->backgrounds[$color] . 'm' . $text . chr(27) . "[0m" . PHP_EOL;
+    }
+}
+
+class PHPVersionResolver
+{
+    private $version = '';
+
+    public function __construct()
+    {
+        $this->output = new ConsoleOutput();
+    }
+
+    public function setPhpVersion($version)
+    {
+        $projectVersions = Config::get('project_php_versions', []);
+        $cwd             = getcwd();
+
+        if (!file_exists($cwd . '/artisan')) {
+            $this->output->alert('No artisan file was found, please run this on laravel project', 'red');
+            exit(1);
+        }
+
+        $this->version = $version;
+
+        $projectVersions[$cwd] = $version;
+
+        Config::set('project_php_versions', $projectVersions);
+    }
+
+    public function getBinaryPath()
+    {
+        $projectVersions = Config::get('project_php_versions', []);
+        $cwd             = getcwd();
+
+        if (isset($projectVersions[$cwd])) {
+            $this->version = $projectVersions[getcwd()];
+            return "/usr/bin/php{$this->version}";
+        }
+
+        $version = readline('Enter php version: ');
+
+        $this->setPhpVersion($version);
+
+        return "/usr/bin/php{$version}";
+    }
+}
+
+class ArtisanDynamicShell
+{
+    public function __construct()
+    {
+        $this->output = new  ConsoleOutput();
+    }
+
+    public function handle($argv)
+    {
+        $this->runProcess($argv);
+    }
+
+    private function runProcess($argv)
+    {
+        $command = $this->getCurrentCommand($argv);
+
+        $this->executeCommand($command);
+    }
+
+    private function executeCommand($command)
+    {
+        $nativeCommandHandler = new AtsNativeCommandHandler($this->output);
+        $nativeCommandHandler->handleIfCommandIsFirstParty($command);
+
+        $latestBin = (new PHPVersionResolver())->getBinaryPath();
+
+        $process = proc_open("$latestBin artisan $command", [
+            0 => STDIN,
+            1 => STDOUT,
+            2 => STDERR,
+        ], $pipes);
+
+        if (is_resource($process)) {
+            $exitCode = proc_close($process);
+            exit($exitCode);
+        }
+
+        exit(1);
+    }
+
+    private function getCurrentCommand($arguments)
+    {
+        array_shift($arguments);
+
+        $appendedCommand = "";
+
+        if (count($arguments) > 0) {
+            $command         = array_values($arguments);
+            $command[0]      = $this->resolveCommandIfExistInAliases($command[0]);
+            $appendedCommand = implode(' ', $command);
+        }
+
+        return $appendedCommand;
+    }
+
+    private function resolveCommandIfExistInAliases($command)
+    {
+        $aliases = Config::get('aliases', []);
+
+        if (isset($aliases[$command])) {
+            return $aliases[$command];
+        }
+
+        return $command;
+    }
+}
+
+class AtsNativeCommandHandler
+{
+    public $output;
+
+    public function __construct($output)
+    {
+        $this->output = $output;
+    }
+
+    private function updateATS()
+    {
+        $this->output->printOut('Fetching latest version');
+        $this->output->printOut('Current Version: ' . ATS_VERSION);
+
+        try {
+            $latestVersionFromServer = json_decode(file_get_contents(ATS_SERVER_URL . "/latest.php"), true);
+        } catch (Exception $exception) {
+            $this->output->alert('Failed to get latest version, please try again', 'red');
+            return;
+        }
+
+        if (!isset($latestVersionFromServer['version'], $latestVersionFromServer['channel'])) {
+            $this->output->alert('Failed to get latest version, please try again', 'red');
+            return;
+        }
+
+        if (ATS_VERSION === $latestVersionFromServer['version']) {
+            $this->output->alert("ATS is in the latest version: {$latestVersionFromServer['version']} no update was needed!", 'cyan');
+            return;
+        }
+
+        $this->output->alert("Updates available, ATS v{$latestVersionFromServer['version']}", 'yellow');
+
+        $sureToUpdate = readline("Are you sure you want to update to {$latestVersionFromServer['version']}? [y/n]");
+
+        if ($sureToUpdate !== 'y') {
+            $this->output->alert('Update cancelled', 'cyan');
+            exit(0);
+        }
+
+        $currentFilePath = $_SERVER['PHP_SELF'];
+        if (!copy(ATS_SERVER_URL . '/ats', $currentFilePath)) {
+            $this->output->alert('Failed to get latest version, please try again', 'red');
+            return;
+        }
+
+        $this->output->alert("[SUCCESS] ATS updated to {$latestVersionFromServer['version']}", 'green');
+    }
+
+    private function about()
+    {
+        $this->output->line('yellow');
+        $this->output->success('ATS a Dynamic Artisan Shell v' . ATS_VERSION);
+        $this->output->line('yellow');
+        $this->output->printOut('This is a dynamic shell for laravel artisan commands');
+        $this->output->printOut('This program will run artisan command based on your configured php version');
+        $this->output->printOut('type: [ ats --help ] to get started', 'cyan');
+
+        exit(0);
+    }
+
+    private function help()
+    {
+        $this->output->line();
+        $this->output->printOut('Usage: ', 'cyan');
+        $this->output->printOut('ats [command]');
+        $this->output->line();
+        $this->output->success('ATS Specific Commands:');
+        $this->output->line();
+        $this->output->printOut('  --about           Show about message');
+        $this->output->printOut('  --help            Show this help message');
+        $this->output->printOut('  --php             Shows the configured php version for the project');
+        $this->output->printOut('  --php-set         Sets the configured php version for the project');
+        $this->output->printOut('  --update          Update the ats to latest version');
+        $this->output->printOut('  --aliases         List all aliases');
+        $this->output->printOut('  --aliases-add     Add new alias');
+        $this->output->printOut('  --aliases-remove  Remove alias');
+        $this->output->line();
+        $this->output->printOut('Examples:', 'yellow');
+        $this->output->line();
+        $this->output->printOut('  ats migrate');
+        $this->output->printOut('  ats migrate:fresh');
+        $this->output->printOut('  ats migrate:fresh --seed');
+
+        exit(0);
+    }
+
+    private function setPhpVersion()
+    {
+        $phpVersion = readline('Enter php version: ');
+
+        (new PHPVersionResolver)->setPhpVersion($phpVersion);
+
+        $this->output->success("PHP Version set to $phpVersion");
+
+        exit(0);
+    }
+
+    private function addAlias()
+    {
+        $aliasName    = readline('Enter alias name: ');
+        $aliasCommand = readline('Enter alias command: ');
+
+        if (empty($aliasName) || empty($aliasCommand)) {
+            $this->output->error("Alias name and command cannot be empty");
+            exit(1);
+        }
+
+        $aliases             = Config::get('aliases', []);
+        $aliases[$aliasName] = $aliasCommand;
+
+        Config::set('aliases', $aliases);
+
+        $this->output->success("Alias added successfully");
+        exit(0);
+    }
+
+    private function removeAlias()
+    {
+        $aliasName = readline('Enter alias name: ');
+
+        $aliases = Config::get('aliases', []);
+
+        if (isset($aliases[$aliasName])) {
+            unset($aliases[$aliasName]);
+            Config::set('aliases', $aliases);
+            $this->output->success("Alias removed successfully");
+            exit(0);
+        }
+
+        $this->output->error("Alias not found");
+        exit(1);
+    }
+
+    private function allAliases()
+    {
+        $aliases = Config::get('aliases', []);
+
+        $this->output->printOut('Aliases:', 'yellow');
+
+        foreach ($aliases as $aliasName => $aliasCommand) {
+            $this->output->printOut("  $aliasName => $aliasCommand");
+        }
+
+        exit(0);
+    }
+
+    private function reset()
+    {
+        $this->output->alert('Resetting ATS', 'yellow');
+        $this->output->alert('Clearing config file', 'yellow');
+
+        Config::set('aliases', []);
+        Config::set('project_php_versions', []);
+
+        $this->output->alert('ATS reset successfully', 'green');
+        exit(0);
+    }
+
+    public function handleIfCommandIsFirstParty($command)
+    {
+        if (!$command) {
+            $command = '--about';
+        }
+
+        switch ($command) {
+            case '--about':
+                $this->about();
+                break;
+            case '--help':
+                $this->help();
+                break;
+            case '--php':
+                $this->output->printOut('Configured PHP Version: ' . explode('/php', (new PHPVersionResolver)->getBinaryPath())[1]);
+                exit(0);
+            case '--update':
+                $this->updateATS();
+                exit(0);
+            case '--php-set':
+                $this->setPhpVersion();
+                break;
+            case '--aliases-add':
+                $this->addAlias();
+                break;
+            case '--aliases-remove':
+                $this->removeAlias();
+                break;
+            case '--aliases':
+                $this->allAliases();
+                break;
+            case '--reset':
+                $this->reset();
+                break;
+        }
+    }
+}
+
+Config::createIfNotExists();
+
+$shell = new ArtisanDynamicShell();
+
+$shell->handle($argv);
