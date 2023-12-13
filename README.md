@@ -32,6 +32,8 @@ ats --update         Update the ats to latest version
 ats --aliases        List all aliases
 ats --aliases-add    Add new alias
 ats --aliases-remove Remove alias
+ats --reset          Reset the ats to default
+ats --config-show    Show the config file
 ```
 
 ## Examples

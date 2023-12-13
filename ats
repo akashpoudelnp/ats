@@ -1,7 +1,7 @@
 #! /usr/bin/env php
 <?php
 
-const ATS_VERSION    = "1.1";
+const ATS_VERSION    = "1.2";
 const ATS_SERVER_URL = 'https://raw.githubusercontent.com/akashpoudelnp/ats/master';
 
 $currentUser = trim(get_current_user());
@@ -12,7 +12,7 @@ class Config
 {
     private static $configs = [];
 
-    public static function get($key, $default = null)
+    public static function get($key=null, $default = null)
     {
         $configPath = ATS_CONFIG_PATH;
 
@@ -28,7 +28,11 @@ class Config
             return $default;
         }
 
-        return isset(static::$configs[$key]) ? static::$configs[$key] : $default;
+        if($key){
+            return isset(static::$configs[$key]) ? static::$configs[$key] : $default;
+        }
+
+        return static::$configs ?: $default;
     }
 
     public static function set($key, $value)
@@ -320,6 +324,8 @@ class AtsNativeCommandHandler
         $this->output->printOut('  --aliases         List all aliases');
         $this->output->printOut('  --aliases-add     Add new alias');
         $this->output->printOut('  --aliases-remove  Remove alias');
+        $this->output->printOut('  --reset           Reset ATS');
+        $this->output->printOut('  --config-show     Show all config');
         $this->output->line();
         $this->output->printOut('Examples:', 'yellow');
         $this->output->line();
@@ -436,6 +442,9 @@ class AtsNativeCommandHandler
             case '--reset':
                 $this->reset();
                 break;
+            case '--config-show':
+                $this->output->printOut(json_encode(Config::get(), JSON_PRETTY_PRINT));
+                exit(0);
         }
     }
 }
